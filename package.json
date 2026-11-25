@@ -1,0 +1,14 @@
+{
+  "name": "labboard",
+  "version": "2.4.0",
+  "description": "LABBoard — інтерактивна дошка й сервер спільного уроку на Cloudflare. Проєкт LAB Богдана Завидовського.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "devDependencies": {
+    "wrangler": "^4.166.0"
+  },
+  "private": true
+}
