@@ -1,5 +1,5 @@
 /* LABBoard: робота без інтернету. Сторінку беремо з мережі (щоб отримувати оновлення), а без мережі — з кешу. */
-const CACHE = 'labboard-2.4';
+const CACHE = 'labboard-2.4.1';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './icon-maskable.png', './fonts-pdf.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

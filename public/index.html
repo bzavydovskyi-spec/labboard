@@ -2199,6 +2199,11 @@ $('#bgInput').addEventListener('change',e=>{ if(e.target.files[0]){ st.nextBg=tr
 function openImgMenu(){ commitText(); const btn=document.querySelector('[data-tool="image"]'); openMenu($('#imgMenu'),btn,true); }
 $('#imgInput').addEventListener('change',e=>{ insertImageFile(e.target.files[0]); e.target.value=''; });
 document.addEventListener('paste',e=>{
+  const pt=e.target; if(pt&&pt.closest&&(pt.closest('input,textarea,select,[contenteditable="true"]'))) return;   // у поле (ключ, адреса сервера, назва) — звичайна вставка
+  { const kt=(e.clipboardData&&e.clipboardData.getData('text/plain')||'').replace(/\s+/g,'');
+    if(/^KL1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(kt)){ e.preventDefault();   // вставили ключ Функціоналу+ просто на дошку — активуємо, а не пишемо текстом
+      verifyKey(kt).then(p=>{ if(!p){ toast('Ключ не підходить — перевірте, чи скопійовано повністю'); return; }
+        LS.set('kreida-key',kt); PLUS.active=true; PLUS.name=p.n; applyPlusUI(); buildSymbols(); openPlus(); toast('✦ Функціонал+ активовано. Дякуємо!'); }); return; } }
   if(Sync.role==='student'&&page().frames&&page().frames.length){ e.preventDefault(); toast('Під час самостійної роботи вставка вимкнена'); return; }
   if(st.editing) return;
   for(const it of (e.clipboardData||{}).items||[]){ if(it.type.startsWith('image/')){ e.preventDefault(); insertImageFile(it.getAsFile()); return; } }
