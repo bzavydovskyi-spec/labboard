@@ -2202,8 +2202,7 @@ document.addEventListener('paste',e=>{
   const pt=e.target; if(pt&&pt.closest&&(pt.closest('input,textarea,select,[contenteditable="true"]'))) return;   // у поле (ключ, адреса сервера, назва) — звичайна вставка
   { const kt=(e.clipboardData&&e.clipboardData.getData('text/plain')||'').replace(/\s+/g,'');
     if(/^KL1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(kt)){ e.preventDefault();   // вставили ключ Функціоналу+ просто на дошку — активуємо, а не пишемо текстом
-      verifyKey(kt).then(p=>{ if(!p){ toast('Ключ не підходить — перевірте, чи скопійовано повністю'); return; }
-        LS.set('kreida-key',kt); PLUS.active=true; PLUS.name=p.n; applyPlusUI(); buildSymbols(); openPlus(); toast('✦ Функціонал+ активовано. Дякуємо!'); }); return; } }
+      activateKey(kt); return; } }
   if(Sync.role==='student'&&page().frames&&page().frames.length){ e.preventDefault(); toast('Під час самостійної роботи вставка вимкнена'); return; }
   if(st.editing) return;
   for(const it of (e.clipboardData||{}).items||[]){ if(it.type.startsWith('image/')){ e.preventDefault(); insertImageFile(it.getAsFile()); return; } }
@@ -3048,7 +3047,42 @@ async function verifyKey(k){
     if(!ok) return null; return JSON.parse(new TextDecoder().decode(b64uDec(body)));
   }catch(_){ return null; }
 }
-async function loadPlus(){ if(PLUS.dev){ applyPlusUI(); return; } const k=LS_get('kreida-key',''); if(!k) return; const p=await verifyKey(k); if(p){ PLUS.active=true; PLUS.name=p.n; } applyPlusUI(); }
+/* Активація: ключ працює на LIC_SEATS пристроях. Перший раз — через сервер активації (бот LAB, потрібен інтернет один раз),
+   далі — офлайн: дошка перевіряє підпис ключа і підпис «квитка» пристрою тим самим відкритим ключем. */
+const LIC_API='https://script.google.com/macros/s/AKfycbzTYieidu13rn45sAqpw-yn48qiieOs6m95PfFpBYhtDFfflKJojfFXEgSqyn8GTB8e/exec', LIC_SEATS=4;
+function devId(){ let d=LS_get('kreida-dev',''); if(!/^[a-f0-9]{24}$/.test(d)){ d=[...crypto.getRandomValues(new Uint8Array(12))].map(b=>b.toString(16).padStart(2,'0')).join(''); LS.set('kreida-dev',d); } return d; }
+function devName(){ const u=navigator.userAgent; const os=/iPhone/.test(u)?'iPhone':/iPad|Macintosh.*Mobile/.test(u)||(navigator.maxTouchPoints>1&&/Macintosh/.test(u))?'iPad':/Android/.test(u)?'Android':/Windows/.test(u)?'Windows':/Mac/.test(u)?'Mac':/Linux/.test(u)?'Linux':'пристрій';
+  const br=/Edg\//.test(u)?'Edge':/CriOS|Chrome\//.test(u)?'Chrome':/FxiOS|Firefox/.test(u)?'Firefox':/Safari/.test(u)?'Safari':'браузер';
+  return os+' · '+br+(matchMedia('(display-mode: standalone)').matches?' · застосунок':''); }
+async function verifyTok(tok,id,dev){ try{ const key=await crypto.subtle.importKey('jwk',LICENSE_JWK,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+  return await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,b64uDec(tok),new TextEncoder().encode('LBACT|'+id+'|'+dev)); }catch(_){ return false; } }
+async function licCall(q){ const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),15000);
+  try{ const r=await fetch(LIC_API+'?'+new URLSearchParams(q),{cache:'no-store',signal:ctl.signal}); clearTimeout(t); return await r.json(); }catch(_){ clearTimeout(t); return null; } }
+const LIC_MSG={bound:'Ключ уже активовано на '+LIC_SEATS+' пристроях. Звільнити місця: бот @zavydovsky_lab_bot → «Мої покупки» → «Звільнити пристрої».',
+  blocked:'Цей ключ заблоковано. Напишіть @zavydovsky.', key:'Ключ не підходить — перевірте, чи скопійовано повністю.', busy:'Сервер активації зайнятий — спробуйте за хвилину.'};
+async function activateKey(k){
+  k=String(k||'').replace(/\s+/g,''); const p=await verifyKey(k);
+  if(!p){ toast(LIC_MSG.key); return false; }
+  if(!p.id){ LS.set('kreida-key',k); PLUS.active=true; PLUS.name=p.n; applyPlusUI(); buildSymbols(); openPlus(); toast('✦ Функціонал+ активовано. Дякуємо!'); return true; }
+  toast('Активую ключ…');
+  const dev=devId(), j=await licCall({lb:'act',key:k,dev:dev,dn:devName()});
+  if(!j){ toast('Для першої активації потрібен інтернет. Під’єднайтеся й натисніть «Активувати» ще раз.'); return false; }
+  if(!j.ok||!j.tok||!(await verifyTok(j.tok,p.id,dev))){ toast(LIC_MSG[j&&j.r]||'Не вдалося активувати ключ. Напишіть @zavydovsky.'); return false; }
+  LS.set('kreida-key',k); LS.set('kreida-tok',j.tok); LS.set('kreida-chk',String(Date.now()));
+  PLUS.active=true; PLUS.name=p.n; applyPlusUI(); buildSymbols(); openPlus(); toast('✦ Функціонал+ активовано'+(j.n?' ('+j.n+' з '+LIC_SEATS+' пристроїв)':'')+'. Дякуємо!'); return true;
+}
+async function loadPlus(){ if(PLUS.dev){ applyPlusUI(); return; } const k=LS_get('kreida-key',''); if(!k) return; const p=await verifyKey(k); if(!p){ applyPlusUI(); return; }
+  if(!p.id){ PLUS.active=true; PLUS.name=p.n; applyPlusUI(); return; }
+  const dev=devId(), tok=LS_get('kreida-tok','');
+  if(tok&&await verifyTok(tok,p.id,dev)){ PLUS.active=true; PLUS.name=p.n; }
+  applyPlusUI();
+  // раз на добу, коли є інтернет: чи ключ не перенесено на інші пристрої / не заблоковано
+  if(PLUS.active&&navigator.onLine&&Date.now()-(+LS_get('kreida-chk','0'))>864e5){
+    const j=await licCall({lb:'chk',id:p.id,dev:dev});
+    if(j){ LS.set('kreida-chk',String(Date.now()));
+      if(!j.ok&&(j.r==='moved'||j.r==='blocked')){ LS.set('kreida-tok',''); PLUS.active=false; applyPlusUI(); buildSymbols();
+        toast(j.r==='blocked'?LIC_MSG.blocked:'Функціонал+ на цьому пристрої вимкнено: місця ключа звільнено. Активуйте ключ ще раз (Меню → Функціонал+).'); } } }
+}
 function applyPlusUI(){
   document.body.classList.toggle('plus',PLUS.active);
   const w=document.querySelector('#logo .word'); if(w&&!w.querySelector('.plus-chip')&&PLUS.active) w.insertAdjacentHTML('beforeend','<span class="plus-chip">PLUS</span>');
@@ -3060,7 +3094,7 @@ function openPlus(focus){
   const card=$('#plusCard'); openModal('#plusModal');
   if(PLUS.active){ card.innerHTML=`<div class="plushead"><h2>Функціонал+ <span class="plus-chip">PLUS</span></h2><p class="sub" style="margin:0">Активовано для: <b>${esc(PLUS.name)}</b>. Дякуємо, що підтримуєте український EdTech!</p></div>
       <ul class="feat">${Object.values(PLUS_FEAT).map(t=>`<li>${t}</li>`).join('')}</ul><div class="row"><button class="btn pri" data-close>Чудово</button></div>`; return; }
-  card.innerHTML=`<div class="plushead"><h2>Функціонал+</h2><p class="sub" style="margin:4px 0 0">Усе, щоб урок був «вау». Один раз — і назавжди, на всіх ваших пристроях.</p>
+  card.innerHTML=`<div class="plushead"><h2>Функціонал+</h2><p class="sub" style="margin:4px 0 0">Усе, щоб урок був «вау». Один раз — і назавжди, до 4 ваших пристроїв.</p>
       <div class="price"><b>199 грн</b><span>назавжди · без підписок</span></div></div>
     <div class="tiers"><div><b>Безкоштовно</b><span>Базова дошка офлайн: інструменти, стікери, текст і формули, штампи, PDF</span></div><div class="on"><b>Функціонал+</b><span>Усе для вчителя, який пише сам і показує дошку в Zoom/Meet. Без сервера</span></div><div><b>+ свій сервер Cloudflare</b><span>Пишуть і учні, «Слідкуйте за мною», пісочниці, контроль вкладок. Безкоштовний тариф</span></div></div>
     <ul class="feat">${Object.entries(PLUS_FEAT).map(([k,t])=>`<li class="${k===focus?'hl':''}">${t}</li>`).join('')}<li>Відтворення ходу розв'язку, конспект уроку</li><li>Усі майбутні оновлення</li></ul>
@@ -3068,9 +3102,7 @@ function openPlus(focus){
     <div style="margin-top:16px;font-weight:800;font-size:13.5px;color:#fff">Уже маєте ключ?</div>
     <div style="display:flex;gap:8px;margin-top:8px"><input class="inp" id="keyInp" placeholder="KL1.…" autocomplete="off" spellcheck="false"><button class="btn pri" id="keyGo">Активувати</button></div>
     <div class="row"><button class="btn" data-close>Пізніше</button></div>`;
-  $('#keyGo').onclick=async()=>{ const k=$('#keyInp').value; const p=await verifyKey(k);
-    if(!p){ toast('Ключ не підходить — перевірте, чи скопійовано повністю'); return; }
-    LS.set('kreida-key',k.trim()); PLUS.active=true; PLUS.name=p.n; applyPlusUI(); buildSymbols(); openPlus(); toast('✦ Функціонал+ активовано. Дякуємо!'); };
+  $('#keyGo').onclick=async()=>{ const b=$('#keyGo'); b.disabled=true; try{ await activateKey($('#keyInp').value); }finally{ b.disabled=false; } };
 }
 
 /* ---------- Сервер: майстер підключення і режим «сам» ---------- */
